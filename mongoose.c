@@ -16456,8 +16456,9 @@ struct stm32h_eth {
       DMACMFCR;
 };
 #undef ETH
-#define ETH \
-  ((struct stm32h_eth *) (uintptr_t) (0x40000000UL + 0x00020000UL + 0x8000UL))
+//#define ETH \
+//  ((struct stm32h_eth *) (uintptr_t) (0x40000000UL + 0x00020000UL + 0x8000UL))
+ #define ETH ((struct stm32h_eth *) (uintptr_t) 0x40100000UL)
 
 #define ETH_PKT_SIZE 1540  // Max frame size
 #define ETH_DESC_CNT 4     // Descriptors count
@@ -16670,9 +16671,11 @@ static bool mg_tcpip_driver_stm32h_up(struct mg_tcpip_if *ifp) {
   return up;
 }
 
-void ETH_IRQHandler(void);
+void ETHERNET_IRQHandler(void);
+//void ETH_IRQHandler(void);
 static uint32_t s_rxno;
-void ETH_IRQHandler(void) {
+void ETHERNET_IRQHandler(void) {
+// void ETH_IRQHandler(void) {
   if (ETH->DMACSR & MG_BIT(6)) {           // Frame received, loop
     ETH->DMACSR = MG_BIT(15) | MG_BIT(6);  // Clear flag
     for (uint32_t i = 0; i < 10; i++) {  // read as they arrive but not forever

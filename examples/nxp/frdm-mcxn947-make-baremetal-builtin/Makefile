@@ -10,7 +10,7 @@ LDFLAGS ?= -T$(LDSCRIPT) -nostdlib -nostartfiles --specs nano.specs -lc -lgcc -W
 
 SOURCES = main.c hal.c
 SOURCES += startup.c
-CFLAGS += -D__ATOLLIC__ -D__STARTUP_CLEAR_BSS	# Make startup code work as expected
+#CFLAGS += -D__ATOLLIC__ -D__STARTUP_CLEAR_BSS	# Make startup code work as expected
 
 # Mongoose options are defined in mongoose_custom.h
 #SOURCES += mongoose.c packed_fs.c
