@@ -504,7 +504,8 @@ static void test_mqtt_basic(void) {
 
   // Publish with QoS1 to subscribed topic and check reception
   // keep former opts.topic
-  opts.message = mg_str("hi1"), opts.qos = 1, opts.retain = false, opts.retransmit_id = 0;
+  opts.message = mg_str("hi1"), opts.qos = 1, opts.retain = false,
+  opts.retransmit_id = 0;
   retries = 0;  // don't do retries for test speed
   do {          // retry on failure after an expected timeout
     opts.retransmit_id = mg_mqtt_pub(c, &opts);  // save id for possible resend
@@ -597,7 +598,7 @@ static void test_mqtt_ver(uint8_t mqtt_version) {
   ASSERT(test_data.flags & flags_received);
   test_data.flags &= ~flags_received;
   opts.retransmit_id = 0;
-// Mongoose sent PUBREL, wait for PUBCOMP
+  // Mongoose sent PUBREL, wait for PUBCOMP
   for (i = 0; i < 500 && !(test_data.flags & flags_completed); i++)
     mg_mgr_poll(&mgr, 10);
   // TODO(): retry sending PUBREL on failure after an expected timeout
@@ -709,6 +710,7 @@ static int fetch(struct mg_mgr *mgr, char *buf, const char *url,
   va_list ap;
   c = mg_http_connect(mgr, url, fcb, &fd);
   ASSERT(c != NULL);
+  MG_DEBUG(("%lu %s", c->id, url));
   if (c != NULL && mg_url_is_ssl(url)) {
     struct mg_tls_opts opts;
     memset(&opts, 0, sizeof(opts));  // read CA from packed_fs
@@ -730,6 +732,7 @@ static int fetch(struct mg_mgr *mgr, char *buf, const char *url,
   for (i = 0; i < 50 && buf[0] == '\0'; i++) mg_mgr_poll(mgr, 1);
   if (!fd.closed) c->is_closing = 1;
   mg_mgr_poll(mgr, 1);
+  MG_DEBUG(("%d %d", fd.code, fd.closed));
   return fd.code;
 }
 
@@ -1212,6 +1215,7 @@ static void f3(struct mg_connection *c, int ev, void *ev_data) {
   // MG_INFO(("%d", ev));
   if (ev == MG_EV_CONNECT) {
     // c->is_hexdumping = 1;
+    ASSERT((c->loc.ip[0] != 0));  // Make sure that c->loc address is populated
     mg_printf(c, "GET /%s HTTP/1.0\r\nHost: %s\r\n\r\n",
               c->rem.is_ip6 ? "" : "/robots.txt",
               c->rem.is_ip6 ? "ipv6.google.com" : "cesanta.com");
@@ -1221,6 +1225,7 @@ static void f3(struct mg_connection *c, int ev, void *ev_data) {
     // ASSERT(mg_vcmp(&hm->method, "HTTP/1.1") == 0);
     // ASSERT(mg_vcmp(&hm->uri, "301") == 0);
     *ok = mg_http_status(hm);
+    c->is_closing = 1;
   } else if (ev == MG_EV_CLOSE) {
     if (*ok == 0) *ok = 888;
   } else if (ev == MG_EV_ERROR) {
@@ -1239,23 +1244,23 @@ static void test_http_client(void) {
   opts.name = mg_url_host(url);
   ASSERT(opts.ca.len > 0);
   ASSERT(opts.name.len > 0);
+
   mg_mgr_init(&mgr);
   c = mg_http_connect(&mgr, url, f3, &ok);
   ASSERT(c != NULL);
   for (i = 0; i < 500 && ok <= 0; i++) mg_mgr_poll(&mgr, 1);
   MG_INFO(("%d", ok));
   ASSERT(ok == 301);
-  c->is_closing = 1;
-  ASSERT((c->loc.ip[0] != 0));  // Make sure that c->loc address is populated
-  mg_mgr_poll(&mgr, 0);
-  ok = 0;
+  mg_mgr_poll(&mgr, 1);
+
 #if MG_TLS
+  // Test usual TLS connection, with CA and host validation
   c = mg_http_connect(&mgr, "https://cesanta.com", f3, &ok);
   ASSERT(c != NULL);
   mg_tls_init(c, &opts);
+  ok = 0;
   for (i = 0; i < 1500 && ok <= 0; i++) mg_mgr_poll(&mgr, 1);
   ASSERT(ok == 200);
-  c->is_closing = 1;
   mg_mgr_poll(&mgr, 1);
 
   // Test failed host validation
@@ -1269,6 +1274,7 @@ static void test_http_client(void) {
   ASSERT(ok == 777);
   mg_mgr_poll(&mgr, 1);
 
+  // Test connection with no certificate validation
   opts.name = mg_str("cesanta.com");
   opts.ca = mg_str("");
   c = mg_http_connect(&mgr, "https://cesanta.com", f3, &ok);
@@ -1276,7 +1282,11 @@ static void test_http_client(void) {
   ok = 0;
   for (i = 0; i < 500 && ok <= 0; i++) mg_mgr_poll(&mgr, 10);
   MG_INFO(("OK: %d", ok));
+#if MG_TLS != MG_TLS_MBED
+  // Note: mbedTLS does not support MBEDTLS_SSL_VERIFY_NONE in TLS1.3
+  // client mode, and since cesanta.com uses TLS1.3, we disable this check
   ASSERT(ok == 200);
+#endif
   mg_mgr_poll(&mgr, 1);
 #endif
 
@@ -1291,33 +1301,6 @@ static void test_http_client(void) {
 
   mg_mgr_free(&mgr);
   ASSERT(mgr.conns == NULL);
-}
-
-// Test host validation only (no CA, no cert)
-static void test_host_validation(void) {
-#if MG_TLS
-  const char *url = "https://cesanta.com";
-  struct mg_tls_opts opts;
-  struct mg_mgr mgr;
-  struct mg_connection *c = NULL;
-  int i, ok = 0;
-  memset(&opts, 0, sizeof(opts));
-  mg_mgr_init(&mgr);
-
-  ok = 0;
-  c = mg_http_connect(&mgr, url, f3, &ok);
-  ASSERT(c != NULL);
-  opts.ca = mg_unpacked("/data/ca.pem");
-  opts.name = mg_url_host(url);
-  mg_tls_init(c, &opts);
-  for (i = 0; i < 1500 && ok <= 0; i++) mg_mgr_poll(&mgr, 10);
-  ASSERT(ok == 200);
-  c->is_closing = 1;
-  mg_mgr_poll(&mgr, 1);
-
-  mg_mgr_free(&mgr);
-  ASSERT(mgr.conns == NULL);
-#endif
 }
 
 static void f4(struct mg_connection *c, int ev, void *ev_data) {
@@ -3355,7 +3338,6 @@ int main(void) {
   test_tls();
   test_ws();
   test_ws_fragmentation();
-  test_host_validation();
   test_http_server();
   test_http_404();
   test_http_no_content_length();
