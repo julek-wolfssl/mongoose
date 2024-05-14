@@ -2353,6 +2353,19 @@ static void test_util(void) {
   }
 
   {
+    uint64_t val, max = (uint64_t) -1;
+    ASSERT(mg_str_to_num(mg_str("0"), 10, &val, sizeof(uint64_t)) && val == 0);
+    ASSERT(mg_str_to_num(mg_str("123"), 10, &val, sizeof(uint64_t)) && val == 123);
+    ASSERT(mg_str_to_num(mg_str(" 123"), 10, &val, sizeof(uint64_t)) == false);
+    ASSERT(mg_str_to_num(mg_str("123 "), 10, &val, sizeof(uint64_t)) == false);
+    ASSERT(mg_str_to_num(mg_str(""), 10, &val, sizeof(uint64_t)) == false);
+    ASSERT(mg_str_to_num(mg_str(" 123x"), 10, &val, sizeof(uint64_t)) == false);
+    ASSERT(mg_str_to_num(mg_str("-"), 10, &val, sizeof(uint64_t)) == false);
+    mg_snprintf(buf, sizeof(buf), sizeof(max) == 8 ? "%llu" : "%lu", max);
+    ASSERT(mg_str_to_num(mg_str(buf), 10, &val, sizeof(uint64_t)) && val == max);
+  }
+
+  {
     size_t i;
     memset(buf, ' ', sizeof(buf));
     mg_random_str(buf, 0);
